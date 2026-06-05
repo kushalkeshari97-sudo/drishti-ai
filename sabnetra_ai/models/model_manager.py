@@ -16,7 +16,7 @@ class ModelManager:
         return cls._instances[cls]
 
     def __init__(self, device: str = "cuda:0", gait_enabled: bool = False,
-                 face_det_thresh: float = 0.5):
+                 face_det_thresh: float = 0.5, model_path: str = "yolov8n.pt"):
         if hasattr(self, "_initialized") and self._initialized:
             return
         self.device = device if torch.cuda.is_available() else "cpu"
@@ -26,6 +26,7 @@ class ModelManager:
         self._gait_model = None
         self._gait_enabled = gait_enabled
         self._face_det_thresh = face_det_thresh
+        self._model_path = model_path
         self._initialized = True
         logger.info(f"ModelManager initialized on device: {self.device}")
 
@@ -58,10 +59,10 @@ class ModelManager:
     def _load_detector(self):
         try:
             from ultralytics import YOLO
-            self._detector = YOLO("yolov8n.pt")
+            self._detector = YOLO(self._model_path)
             if self.device != "cpu":
                 self._detector.to(self.device)
-            logger.info("YOLOv8s detector loaded")
+            logger.info(f"Detector loaded: {self._model_path}")
         except Exception as e:
             logger.error(f"Failed to load YOLOv8s: {e}")
             self._detector = _FAILED

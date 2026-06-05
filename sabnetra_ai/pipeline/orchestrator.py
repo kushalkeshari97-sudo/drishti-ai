@@ -87,7 +87,8 @@ class SabNetraPipeline:
         self._lock = threading.Lock()
         self.model_manager = ModelManager(
             self.config.device, self.config.pipeline.enable_gait,
-            self.config.features.face_det_thresh)
+            self.config.features.face_det_thresh,
+            self.config.detector.model_path)
         self.buffer_manager = FrameBufferManager(
             maxsize=self.config.pipeline.frame_buffer_size)
         self.detector = Detector(self.config.detector, self.model_manager)

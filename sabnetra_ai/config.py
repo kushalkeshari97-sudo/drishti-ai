@@ -25,7 +25,7 @@ class TrackerConfig:
 
 @dataclass
 class DetectorConfig:
-    model_path: str = "yolov8s.pt"
+    model_path: str = "yolov8n.pt"
     confidence_threshold: float = 0.35
     iou_threshold: float = 0.45
     img_size: int = 640

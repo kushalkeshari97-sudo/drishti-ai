@@ -19,7 +19,7 @@ config.matcher.temporal_consistency_frames = 3
 config.tracker.match_thresh = 0.85
 config.tracker.new_track_thresh = 0.9
 config.tracker.min_hits = 1
-config.tracker.max_time_lost = 20
+config.tracker.max_time_lost = 120
 config.tracker.appearance_weight = 0.0
 config.tracker.motion_weight = 0.2
 config.features.face_det_thresh = 0.1
@@ -64,8 +64,8 @@ if not cap.isOpened():
 
 tracker = BoTSORT(config.tracker)
 frame_count = 0
-process_every = 3
-do_feat_every = 6
+process_every = 5
+do_feat_every = 15
 fps_history = []
 
 cv2.namedWindow("SabNetra AI", cv2.WINDOW_NORMAL)
