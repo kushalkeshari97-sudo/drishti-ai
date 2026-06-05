@@ -20,8 +20,8 @@ config.tracker.match_thresh = 0.85
 config.tracker.new_track_thresh = 0.9
 config.tracker.min_hits = 1
 config.tracker.max_time_lost = 30
-config.tracker.appearance_weight = 0.0
-config.tracker.motion_weight = 0.2
+config.tracker.appearance_weight = 0.4
+config.tracker.motion_weight = 0.3
 config.features.face_det_thresh = 0.1
 config.pipeline.enable_reid = False
 
@@ -82,6 +82,13 @@ cached_state = {}
 last_dets = []
 ticks = cv2.getTickCount()
 
+def color_hist(crop):
+    if crop is None or crop.size == 0:
+        return None
+    h = cv2.calcHist([crop], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    cv2.normalize(h, h)
+    return h.flatten().astype(np.float32)
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -100,13 +107,20 @@ while True:
 
     if do_detect:
         last_dets = pipeline.detector.detect(frame)
-        det_dicts = [{"bbox": d.bbox.copy(), "confidence": d.confidence, "class_id": d.class_id} for d in last_dets]
+        det_dicts = []
+        app_embs = []
+        for d in last_dets:
+            det_dicts.append({"bbox": d.bbox.copy(), "confidence": d.confidence, "class_id": d.class_id})
+            x1, y1, x2, y2 = map(int, d.bbox)
+            crop = frame[max(0,y1):min(frame.shape[0],y2), max(0,x1):min(frame.shape[1],x2)]
+            app_embs.append(color_hist(crop))
         for _ in range(3):
             cap.grab()
     else:
         det_dicts = []
+        app_embs = []
 
-    tracks = tracker.update(det_dicts)
+    tracks = tracker.update(det_dicts, app_embs)
 
     new_ticks = cv2.getTickCount()
     fps = cv2.getTickFrequency() / (new_ticks - ticks)
