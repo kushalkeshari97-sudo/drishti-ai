@@ -145,36 +145,38 @@ while True:
         label = f"ID:{t.track_id}"
 
         if do_detect and t.is_confirmed:
-            try:
-                best_i = -1
-                best_iou = 0.3
-                for di, d in enumerate(last_dets):
-                    b = d.bbox
-                    xi1, yi1 = max(t.bbox[0], b[0]), max(t.bbox[1], b[1])
-                    xi2, yi2 = min(t.bbox[2], b[2]), min(t.bbox[3], b[3])
-                    if xi2 <= xi1 or yi2 <= yi1:
-                        continue
-                    inter = (xi2 - xi1) * (yi2 - yi1)
-                    area_t = (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1])
-                    area_d = (b[2] - b[0]) * (b[3] - b[1])
-                    iou = inter / (area_t + area_d - inter)
-                    if iou > best_iou:
-                        best_iou = iou
-                        best_i = di
-                face_emb = det_face_map.get(best_i) if best_i >= 0 else None
+            current_state = cached_state.get(t.track_id, ("GREEN", "", 0.0, []))[0]
+            if current_state != "RED":
+                try:
+                    best_i = -1
+                    best_iou = 0.3
+                    for di, d in enumerate(last_dets):
+                        b = d.bbox
+                        xi1, yi1 = max(t.bbox[0], b[0]), max(t.bbox[1], b[1])
+                        xi2, yi2 = min(t.bbox[2], b[2]), min(t.bbox[3], b[3])
+                        if xi2 <= xi1 or yi2 <= yi1:
+                            continue
+                        inter = (xi2 - xi1) * (yi2 - yi1)
+                        area_t = (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1])
+                        area_d = (b[2] - b[0]) * (b[3] - b[1])
+                        iou = inter / (area_t + area_d - inter)
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_i = di
+                    face_emb = det_face_map.get(best_i) if best_i >= 0 else None
 
-                if face_emb is not None:
-                    fd = {"face_embedding": face_emb, "body_embedding": None,
-                          "clothing_descriptor": None, "gait_descriptor": None}
-                    state, sid, score = pipeline.suspect_manager.process_detection(
-                        t.track_id, "webcam", fd, frame_count)
-                    cached_state[t.track_id] = (state, sid, score, [f"face({len(face_emb)})"])
-                else:
-                    cached_state[t.track_id] = ("GREEN", "", 0.0, ["no_face"])
-            except Exception as e:
-                print(f"  !! Track {t.track_id} error: {e}")
-                import traceback
-                traceback.print_exc()
+                    if face_emb is not None:
+                        fd = {"face_embedding": face_emb, "body_embedding": None,
+                              "clothing_descriptor": None, "gait_descriptor": None}
+                        state, sid, score = pipeline.suspect_manager.process_detection(
+                            t.track_id, "webcam", fd, frame_count)
+                        cached_state[t.track_id] = (state, sid, score, [f"face({len(face_emb)})"])
+                    else:
+                        cached_state[t.track_id] = ("GREEN", "", 0.0, ["no_face"])
+                except Exception as e:
+                    print(f"  !! Track {t.track_id} error: {e}")
+                    import traceback
+                    traceback.print_exc()
 
         if t.track_id in cached_state:
             state, sid, score, feat_names = cached_state[t.track_id]
