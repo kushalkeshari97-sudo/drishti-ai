@@ -65,7 +65,6 @@ if not cap.isOpened():
 tracker = BoTSORT(config.tracker)
 frame_count = 0
 process_every = 5
-do_feat_every = 15
 fps_history = []
 
 cv2.namedWindow("SabNetra AI", cv2.WINDOW_NORMAL)
@@ -81,13 +80,6 @@ print()
 cached_state = {}
 last_dets = []
 ticks = cv2.getTickCount()
-
-def color_hist(crop):
-    if crop is None or crop.size == 0:
-        return None
-    h = cv2.calcHist([crop], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-    cv2.normalize(h, h)
-    return h.flatten().astype(np.float32)
 
 while True:
     ret, frame = cap.read()
@@ -109,16 +101,29 @@ while True:
         last_dets = pipeline.detector.detect(frame)
         det_dicts = []
         app_embs = []
-        for d in last_dets:
+        det_face_map = {}  # detection index -> face embedding
+        for i, d in enumerate(last_dets):
             det_dicts.append({"bbox": d.bbox.copy(), "confidence": d.confidence, "class_id": d.class_id})
-            x1, y1, x2, y2 = map(int, d.bbox)
-            crop = frame[max(0,y1):min(frame.shape[0],y2), max(0,x1):min(frame.shape[1],x2)]
-            app_embs.append(color_hist(crop))
+            face = pipeline.feature_extractor.extract_face(frame, d.bbox)
+            det_face_map[i] = face
+            if face is not None:
+                app_embs.append(face)
+            else:
+                x1, y1, x2, y2 = map(int, d.bbox)
+                crop = frame[max(0,y1):min(frame.shape[0],y2), max(0,x1):min(frame.shape[1],x2)]
+                if crop is not None and crop.size > 0:
+                    h = cv2.calcHist([crop], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+                    cv2.normalize(h, h)
+                    app_embs.append(h.flatten().astype(np.float32))
+                else:
+                    app_embs.append(None)
         for _ in range(3):
             cap.grab()
     else:
         det_dicts = []
         app_embs = []
+        last_dets = []
+        det_face_map = {}
 
     tracks = tracker.update(det_dicts, app_embs)
 
@@ -132,31 +137,40 @@ while True:
     active_ids = {t.track_id for t in tracks}
     cached_state = {k: v for k, v in cached_state.items() if k in active_ids}
 
-    do_feat = (do_detect and frame_count % do_feat_every == 0)
-
-    for t in tracks:
+    for t_idx, t in enumerate(tracks):
         x1, y1, x2, y2 = map(int, t.bbox)
         if x2 <= x1 or y2 <= y1 or x2 < 0 or y2 < 0 or x1 > 640 or y1 > 360:
             continue
         c = (0, 255, 0)
         label = f"ID:{t.track_id}"
 
-        if do_feat and t.is_confirmed:
+        if do_detect and t.is_confirmed:
             try:
-                feats = pipeline.feature_extractor.extract_all(
-                    frame, t.bbox, t.track_id, "webcam", frame_count)
-                fd = {"face_embedding": feats.face_embedding, "body_embedding": None,
-                      "clothing_descriptor": None, "gait_descriptor": None}
-                feat_names = []
-                if feats.face_embedding is not None:
-                    feat_names.append(f"face({len(feats.face_embedding)})")
+                best_i = -1
+                best_iou = 0.3
+                for di, d in enumerate(last_dets):
+                    b = d.bbox
+                    xi1, yi1 = max(t.bbox[0], b[0]), max(t.bbox[1], b[1])
+                    xi2, yi2 = min(t.bbox[2], b[2]), min(t.bbox[3], b[3])
+                    if xi2 <= xi1 or yi2 <= yi1:
+                        continue
+                    inter = (xi2 - xi1) * (yi2 - yi1)
+                    area_t = (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1])
+                    area_d = (b[2] - b[0]) * (b[3] - b[1])
+                    iou = inter / (area_t + area_d - inter)
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_i = di
+                face_emb = det_face_map.get(best_i) if best_i >= 0 else None
 
-                if feats.has_any_embedding():
+                if face_emb is not None:
+                    fd = {"face_embedding": face_emb, "body_embedding": None,
+                          "clothing_descriptor": None, "gait_descriptor": None}
                     state, sid, score = pipeline.suspect_manager.process_detection(
                         t.track_id, "webcam", fd, frame_count)
-                    cached_state[t.track_id] = (state, sid, score, feat_names)
+                    cached_state[t.track_id] = (state, sid, score, [f"face({len(face_emb)})"])
                 else:
-                    cached_state[t.track_id] = ("GREEN", "", 0.0, ["no_features"])
+                    cached_state[t.track_id] = ("GREEN", "", 0.0, ["no_face"])
             except Exception as e:
                 print(f"  !! Track {t.track_id} error: {e}")
                 import traceback
