@@ -19,7 +19,7 @@ config.matcher.temporal_consistency_frames = 3
 config.tracker.match_thresh = 0.85
 config.tracker.new_track_thresh = 0.9
 config.tracker.min_hits = 1
-config.tracker.max_time_lost = 120
+config.tracker.max_time_lost = 30
 config.tracker.appearance_weight = 0.0
 config.tracker.motion_weight = 0.2
 config.features.face_det_thresh = 0.1
@@ -80,7 +80,6 @@ print()
 
 cached_state = {}
 last_dets = []
-last_tracks = []
 ticks = cv2.getTickCount()
 
 while True:
@@ -97,12 +96,17 @@ while True:
     frame = cv2.resize(frame, (640, 360))
     frame_count += 1
 
-    if frame_count % process_every == 0:
+    do_detect = (frame_count % process_every == 0)
+
+    if do_detect:
         last_dets = pipeline.detector.detect(frame)
         det_dicts = [{"bbox": d.bbox.copy(), "confidence": d.confidence, "class_id": d.class_id} for d in last_dets]
-        last_tracks = tracker.update(det_dicts)
         for _ in range(3):
             cap.grab()
+    else:
+        det_dicts = []
+
+    tracks = tracker.update(det_dicts)
 
     new_ticks = cv2.getTickCount()
     fps = cv2.getTickFrequency() / (new_ticks - ticks)
@@ -111,13 +115,15 @@ while True:
     if len(fps_history) > 30:
         fps_history.pop(0)
 
-    if frame_count % process_every == 0:
-        do_feat = (frame_count % do_feat_every == 0)
-    else:
-        do_feat = False
+    active_ids = {t.track_id for t in tracks}
+    cached_state = {k: v for k, v in cached_state.items() if k in active_ids}
 
-    for t in last_tracks:
+    do_feat = (do_detect and frame_count % do_feat_every == 0)
+
+    for t in tracks:
         x1, y1, x2, y2 = map(int, t.bbox)
+        if x2 <= x1 or y2 <= y1 or x2 < 0 or y2 < 0 or x1 > 640 or y1 > 360:
+            continue
         c = (0, 255, 0)
         label = f"ID:{t.track_id}"
 
