@@ -1,0 +1,13 @@
+--find-links https://download.pytorch.org/whl/cu118
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+ultralytics>=8.0.0
+scipy>=1.10.0
+faiss-cpu>=1.7.0
+insightface>=0.7.0
+onnxruntime>=1.15.0
+# Optional:
+# torchreid>=1.4.0
+# opengaitext>=0.1.0
