@@ -21,9 +21,17 @@ RUN_NOTES.txt
 Thumbs.db
 .DS_Store
 
-# Environment
+# Environment & secrets
 .env
 *.env.local
+config.local.yaml
 
 # Checkpoints / data
 suspect_embeddings/
+
+# Runtime data (suspect photos, logs)
+data/
+logs/
+
+# Logs
+*.log

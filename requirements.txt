@@ -8,6 +8,16 @@ scipy>=1.10.0
 faiss-cpu>=1.7.0
 insightface>=0.7.0
 onnxruntime>=1.15.0
+
+# API server
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=11.0
+
+# Config
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
 # Optional:
 # torchreid>=1.4.0
 # opengaitext>=0.1.0
