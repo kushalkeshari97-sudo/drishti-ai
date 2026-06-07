@@ -1,0 +1,28 @@
+detector:
+  model_path: "yolov8n.pt"
+  confidence_threshold: 0.55
+  img_size: 256
+  device: "cuda:0"
+
+tracker:
+  match_thresh: 0.85
+  max_time_lost: 30
+  appearance_weight: 0.4
+  motion_weight: 0.3
+
+matcher:
+  face_weight: 0.5
+  reid_weight: 0.3
+  clothing_weight: 0.2
+  red_threshold: 0.35
+  yellow_threshold: 0.20
+
+features:
+  face_det_thresh: 0.1
+
+pipeline:
+  enable_reid: true
+  process_every_n_frames: 2
+
+camera:
+  rtsp_url: "rtsp://admin:Xzone%40321@192.168.1.217:554/Streaming/Channels/101"
