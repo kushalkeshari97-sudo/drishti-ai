@@ -118,6 +118,9 @@ sabnetra enroll suspect.jpg --case CASE001 --id S0001
 
 This extracts face/body/clothing features from the image and stores them in the FAISS index.
 
+> Place your suspect photos in `data/suspects/` (gitignored — never committed to the repo).
+> Or use `sabnetra enroll <path>` to enroll from any location.
+
 From multiple images and videos:
 
 ```bash
@@ -133,7 +136,7 @@ python scripts/run_camera.py
 ```
 
 This:
-1. Loads `data/suspects/suspect.jpg` and enrolls it as suspect "SUSPECT"
+1. Loads `data/suspects/suspect.jpg` (place your suspect photo there) and enrolls it as suspect "SUSPECT"
 2. Opens your webcam
 3. For each frame: detects people → tracks them → compares against the enrolled suspect
 4. Draws colored boxes: 🟢 GREEN (unknown), 🟡 YELLOW (possible match), 🔴 RED (confirmed match)
