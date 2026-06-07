@@ -79,7 +79,7 @@ class CrossCameraTracker:
             if suspect_profile is None:
                 return False, 0.0
             score = self.matcher.match_with_profile(features, suspect_profile)
-            is_match = score >= self.matcher_config.cross_camera_face_weight * 0.6
+            is_match = score >= self.matcher_config.yellow_threshold
             if is_match:
                 self._suspect_camera_map[suspect_id].add(to_camera)
                 logger.info(f"Cross-camera match: {suspect_id} "

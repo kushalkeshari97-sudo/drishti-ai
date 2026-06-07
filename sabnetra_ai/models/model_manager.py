@@ -103,7 +103,7 @@ class ModelManager:
     def warmup(self):
         dummy = torch.zeros((1, 3, 320, 320), device=self.device)
         try:
-            self.detector.predict(dummy, verbose=False)
+            self.detector(dummy, verbose=False)
             logger.info("Detector warmed up")
         except Exception as e:
             logger.warning(f"Detector warmup failed: {e}")

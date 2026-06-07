@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import torch
+import torch.nn as nn
 import logging
 from typing import List, Optional, Tuple
 
@@ -62,7 +63,6 @@ class FeatureExtractor:
                  model_manager: Optional[ModelManager] = None):
         self.config = config or FeatureConfig()
         self.model_manager = model_manager or ModelManager()
-        import torch.nn as nn
         self._clothing_conv: Optional[nn.Conv2d] = None
 
     def extract_face(self, frame: np.ndarray,

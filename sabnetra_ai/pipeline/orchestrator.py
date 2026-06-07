@@ -55,7 +55,6 @@ class CameraPipeline:
                 "confidence": det.confidence,
                 "class_id": det.class_id,
             })
-        self.detector.extract_crops(frame, detections)
         frame_embeddings = []
         for det in detections:
             features = self.feature_extractor.extract_all(

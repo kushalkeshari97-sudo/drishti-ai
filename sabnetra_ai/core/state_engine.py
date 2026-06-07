@@ -14,7 +14,8 @@ class IdentityState:
 
     @staticmethod
     def color(state: str) -> str:
-        return {"GREEN": "\U0001f7e9", "YELLOW": "\U0001f7e8", "RED": "\U0001f7e5"}.get(state, "\u2b1c")
+        colors = {"GREEN": 1, "YELLOW": 2, "RED": 3}
+        return colors.get(state, 0)
 
 
 class StateClassificationEngine:

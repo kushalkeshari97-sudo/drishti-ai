@@ -67,7 +67,7 @@ class SuspectDatabase:
     def get(self, suspect_id: str) -> Optional[SuspectProfile]:
         return self.suspects.get(suspect_id)
 
-    def rebuild_indices(self, dim_face: int = 512, dim_body: int = 512):
+    def rebuild_indices(self):
         face_embs = []
         body_embs = []
         self._face_ids = []
@@ -80,11 +80,13 @@ class SuspectDatabase:
                 body_embs.append(prof.body_embedding)
                 self._body_ids.append(sid)
         if face_embs:
-            self._face_index = self._build_index(np.stack(face_embs), dim_face)
+            stacked = np.stack(face_embs)
+            self._face_index = self._build_index(stacked, stacked.shape[1])
         else:
             self._face_index = None
         if body_embs:
-            self._body_index = self._build_index(np.stack(body_embs), dim_body)
+            stacked = np.stack(body_embs)
+            self._body_index = self._build_index(stacked, stacked.shape[1])
         else:
             self._body_index = None
         self._dirty = False
@@ -98,6 +100,8 @@ class SuspectDatabase:
                     ) -> List[Tuple[str, float]]:
         if self._face_index is None or self._face_index.ntotal == 0:
             return []
+        if np.linalg.norm(query) == 0:
+            return []
         query = l2_normalize(query).reshape(1, -1).astype(np.float32)
         scores, indices = self._face_index.search(query, min(k, self._face_index.ntotal))
         return [(self._face_ids[idx], float(scores[0][i]))
@@ -106,6 +110,8 @@ class SuspectDatabase:
     def search_body(self, query: np.ndarray, k: int = 5
                     ) -> List[Tuple[str, float]]:
         if self._body_index is None or self._body_index.ntotal == 0:
+            return []
+        if np.linalg.norm(query) == 0:
             return []
         query = l2_normalize(query).reshape(1, -1).astype(np.float32)
         scores, indices = self._body_index.search(query, min(k, self._body_index.ntotal))

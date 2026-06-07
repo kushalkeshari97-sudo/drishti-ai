@@ -24,8 +24,8 @@ class GlobalSuspectManager:
         self._global_suspects: Dict[str, SuspectProfile] = {}
 
     def process_detection(self, track_id: int, camera_id: str,
-                          features: dict, timestamp: float
-                          ) -> tuple:
+                           features: dict, timestamp: float
+                           ) -> tuple:
         with Timer("suspect_manager"):
             track_mem = self.embedding_memory.get_or_create(track_id, camera_id)
             track_mem.update(features, timestamp)
@@ -47,7 +47,7 @@ class GlobalSuspectManager:
                     match_result.suspect_id = new_id
                     self._global_track_to_suspect[track_id] = new_id
                     self._suspect_to_tracks[new_id].append(track_id)
-            return state, suspect_id if state != IdentityState.GREEN else "UNKNOWN", score
+            return state, suspect_id, score
 
     def _register_new_suspect(self, features: dict) -> str:
         self._suspect_counter += 1
