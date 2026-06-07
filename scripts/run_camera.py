@@ -13,8 +13,9 @@ config.detector.half_precision = True
 config.detector.skip_frame_on_low_light = False
 config.matcher.red_threshold = 0.35
 config.matcher.yellow_threshold = 0.20
-config.matcher.face_weight = 1.0
-config.matcher.reid_weight = 0.0
+config.matcher.face_weight = 0.5
+config.matcher.reid_weight = 0.3
+config.matcher.clothing_weight = 0.2
 config.matcher.temporal_consistency_frames = 3
 config.tracker.match_thresh = 0.85
 config.tracker.new_track_thresh = 0.9
@@ -23,12 +24,12 @@ config.tracker.max_time_lost = 30
 config.tracker.appearance_weight = 0.4
 config.tracker.motion_weight = 0.3
 config.features.face_det_thresh = 0.1
-config.pipeline.enable_reid = False
+config.pipeline.enable_reid = True
 
 pipeline = create_pipeline(config)
 pipeline.model_manager.warmup()
 
-suspect_path = os.path.join(os.path.dirname(__file__), "sabnetra_ai", "suspect.jpg")
+suspect_path = os.path.join(os.path.dirname(__file__), "..", "data", "suspects", "suspect.jpg")
 suspect_img = cv2.imread(suspect_path)
 if suspect_img is None:
     print(f"ERROR: Could not load {suspect_path}")
@@ -44,11 +45,17 @@ if feats_suspect.face_embedding is not None:
         suspect_id="SUSPECT",
         case_id="FILE",
         face_emb=feats_suspect.face_embedding,
+        body_emb=feats_suspect.body_embedding,
+        clothing_emb=feats_suspect.clothing_descriptor,
         metadata={"source": "suspect.jpg"},
     )
     pipeline.suspect_manager.enroll_suspect(profile)
     print(f"Enrolled suspect from {suspect_path}")
     print(f"Face embedding dim: {len(feats_suspect.face_embedding)}")
+    if feats_suspect.body_embedding is not None:
+        print(f"Body embedding dim: {len(feats_suspect.body_embedding)}")
+    if feats_suspect.clothing_descriptor is not None:
+        print(f"Clothing descriptor dim: {len(feats_suspect.clothing_descriptor)}")
 else:
     print("ERROR: No face detected in suspect.jpg")
     exit(1)
@@ -101,13 +108,15 @@ while True:
         last_dets = pipeline.detector.detect(frame)
         det_dicts = []
         app_embs = []
-        det_face_map = {}  # detection index -> face embedding
+        det_feats = {}  # detection index -> IdentityFeatures
         for i, d in enumerate(last_dets):
             det_dicts.append({"bbox": d.bbox.copy(), "confidence": d.confidence, "class_id": d.class_id})
-            face = pipeline.feature_extractor.extract_face(frame, d.bbox)
-            det_face_map[i] = face
-            if face is not None:
-                app_embs.append(face)
+            all_feats = pipeline.feature_extractor.extract_all(frame, d.bbox, -1, "webcam", frame_count)
+            det_feats[i] = all_feats
+            if all_feats.face_embedding is not None:
+                app_embs.append(all_feats.face_embedding)
+            elif all_feats.body_embedding is not None:
+                app_embs.append(all_feats.body_embedding)
             else:
                 x1, y1, x2, y2 = map(int, d.bbox)
                 crop = frame[max(0,y1):min(frame.shape[0],y2), max(0,x1):min(frame.shape[1],x2)]
@@ -123,7 +132,7 @@ while True:
         det_dicts = []
         app_embs = []
         last_dets = []
-        det_face_map = {}
+        det_feats = {}
 
     tracks = tracker.update(det_dicts, app_embs)
 
@@ -145,7 +154,16 @@ while True:
         label = f"ID:{t.track_id}"
 
         if do_detect and t.is_confirmed:
-            current_state = cached_state.get(t.track_id, ("GREEN", "", 0.0, []))[0]
+            current = cached_state.get(t.track_id)
+            current_state = current[0] if current else "GREEN"
+
+            # RED demotion: re-verify every 30 detection frames (~6s)
+            if current_state == "RED":
+                rd = (current[4] if len(current) > 4 else 0) + 1
+                cached_state[t.track_id] = (*current[:4], rd)
+                if rd % 30 == 0:
+                    current_state = "CHECK"
+
             if current_state != "RED":
                 try:
                     best_i = -1
@@ -163,23 +181,28 @@ while True:
                         if iou > best_iou:
                             best_iou = iou
                             best_i = di
-                    face_emb = det_face_map.get(best_i) if best_i >= 0 else None
+                    all_feats = det_feats.get(best_i) if best_i >= 0 else None
 
-                    if face_emb is not None:
-                        fd = {"face_embedding": face_emb, "body_embedding": None,
-                              "clothing_descriptor": None, "gait_descriptor": None}
-                        state, sid, score = pipeline.suspect_manager.process_detection(
+                    if all_feats is not None and all_feats.has_any_embedding():
+                        fd = {
+                            "face_embedding": all_feats.face_embedding,
+                            "body_embedding": all_feats.body_embedding,
+                            "clothing_descriptor": all_feats.clothing_descriptor,
+                            "gait_descriptor": None,
+                        }
+                        state_str, sid, score = pipeline.suspect_manager.process_detection(
                             t.track_id, "webcam", fd, frame_count)
-                        cached_state[t.track_id] = (state, sid, score, [f"face({len(face_emb)})"])
+                        feat_names = [k for k, v in fd.items() if v is not None]
+                        cached_state[t.track_id] = (state_str, sid, score, feat_names, 0)
                     else:
-                        cached_state[t.track_id] = ("GREEN", "", 0.0, ["no_face"])
+                        cached_state[t.track_id] = ("GREEN", "", 0.0, ["no_feats"], 0)
                 except Exception as e:
                     print(f"  !! Track {t.track_id} error: {e}")
                     import traceback
                     traceback.print_exc()
 
         if t.track_id in cached_state:
-            state, sid, score, feat_names = cached_state[t.track_id]
+            state, sid, score, feat_names = cached_state[t.track_id][:4]
             if state == "RED":
                 c = (0, 0, 255)
                 label = f"RED {sid} {score:.2f}"
