@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Alert:
+    """Data class representing a single alert event."""
+
     alert_id: str
     suspect_id: str
     track_id: int
@@ -26,7 +28,10 @@ class Alert:
 
 
 class AlertSystem:
+    """Manages alert triggering with cooldown, rate limiting, and callbacks."""
+
     def __init__(self, config: Optional[AlertConfig] = None):
+        """Initialize alert system with config."""
         self.config = config or AlertConfig()
         self._alert_history: deque = deque(maxlen=1000)
         self._cooldown_tracker: dict = {}
@@ -37,6 +42,17 @@ class AlertSystem:
     def trigger(self, suspect_id: str, track_id: int, camera_id: str,
                 state: str, score: float, details: Optional[dict] = None
                 ) -> Optional[Alert]:
+        """Trigger an alert if cooldown and rate-limit checks pass.
+        Args:
+            suspect_id: The suspect identifier.
+            track_id: The track identifier.
+            camera_id: The camera identifier.
+            state: Alert state (GREEN/YELLOW/RED).
+            score: Match score.
+            details: Optional additional details.
+        Returns:
+            Alert object if triggered, None otherwise.
+        """
         if state == "GREEN" and not self.config.alert_on_yellow:
             return None
         if state == "YELLOW" and not self.config.alert_on_yellow:
@@ -87,20 +103,25 @@ class AlertSystem:
                 logger.error(f"Alert callback failed: {e}")
 
     def register_callback(self, callback: Callable):
+        """Register a callback function invoked on every alert trigger."""
         self._callbacks.append(callback)
 
     def get_recent_alerts(self, count: int = 10) -> List[Alert]:
+        """Return the most recent alerts, up to count."""
         return list(self._alert_history)[-count:]
 
     def get_alerts_since(self, since: float) -> List[Alert]:
+        """Return all alerts with timestamp >= since."""
         return [a for a in self._alert_history if a.timestamp >= since]
 
     def clear(self):
+        """Clear all alert history, cooldowns, and counters."""
         self._alert_history.clear()
         self._cooldown_tracker.clear()
         self._alert_counters.clear()
 
     def stats(self) -> dict:
+        """Return summary statistics about the alert system."""
         return {
             "total_alerts": len(self._alert_history),
             "cameras": dict(self._alert_counters),
