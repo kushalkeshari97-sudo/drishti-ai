@@ -3,39 +3,52 @@ import logging
 import numpy as np
 from typing import Optional, Callable
 
-logger = logging.getLogger("SabNetra")
+logger = logging.getLogger(__name__)
 
 
 class Timer:
+    """Context manager for measuring and logging execution time of code blocks."""
+
     def __init__(self, name: str = ""):
+        """Initialize timer with an optional name for logging."""
         self.name = name
         self.start_time = None
         self.elapsed = 0.0
 
     def __enter__(self):
-        self.start()
+        """Start the timer if debug logging is enabled."""
+        if logger.isEnabledFor(logging.DEBUG):
+            self.start()
         return self
 
     def __exit__(self, *args):
-        self.stop()
-        if self.name:
-            logger.debug(f"{self.name}: {self.elapsed*1000:.1f}ms")
+        """Stop the timer and log elapsed time if named."""
+        if self.start_time is not None:
+            self.stop()
+            if self.name:
+                logger.debug(f"{self.name}: {self.elapsed*1000:.1f}ms")
 
     def start(self):
+        """Start the timer."""
         self.start_time = time.perf_counter()
 
     def stop(self) -> float:
+        """Stop the timer and return elapsed seconds."""
         if self.start_time is not None:
             self.elapsed = time.perf_counter() - self.start_time
         return self.elapsed
 
 
 class FrameRateCounter:
+    """Tracks frame rate over a sliding window of timestamps."""
+
     def __init__(self, window: int = 30):
+        """Initialize counter with a sliding window size."""
         self.window = window
         self.timestamps = []
 
     def tick(self) -> float:
+        """Record a frame timestamp and return current FPS estimate."""
         now = time.perf_counter()
         self.timestamps.append(now)
         if len(self.timestamps) > self.window:
@@ -46,11 +59,20 @@ class FrameRateCounter:
 
     @property
     def fps(self) -> float:
+        """Return the current estimated FPS."""
         return self.tick()
 
 
 def is_low_light(frame: np.ndarray, threshold: float = 30.0) -> bool:
-    gray = frame if len(frame.shape) == 2 else cv2_to_gray(frame)
+    """Check if a frame is too dark for reliable detection.
+    Args:
+        frame: Input image.
+        threshold: Mean brightness cutoff.
+    Returns:
+        True if mean brightness is below threshold.
+    """
+    import cv2
+    gray = frame if len(frame.shape) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     mean_brightness = np.mean(gray)
     return mean_brightness < threshold
 
@@ -65,6 +87,15 @@ def cv2_to_gray(frame: np.ndarray) -> np.ndarray:
 def draw_detection(frame: np.ndarray, box: np.ndarray, track_id: int,
                    state: str, suspect_id: Optional[str] = None,
                    score: float = 0.0):
+    """Draw bounding box and label for a detection on the frame.
+    Args:
+        frame: Image to draw on (modified in-place).
+        box: (x1, y1, x2, y2) bounding box.
+        track_id: Track identifier.
+        state: State string (GREEN/YELLOW/RED).
+        suspect_id: Optional suspect identifier.
+        score: Optional match score.
+    """
     import cv2
     colors = {
         "GREEN": (0, 255, 0),
