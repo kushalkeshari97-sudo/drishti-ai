@@ -86,3 +86,25 @@ def test_config_override():
     assert c.detector.confidence_threshold == 0.55
     assert c.matcher.red_threshold == 0.45
     assert c.tracker.match_thresh == 0.85
+
+
+def test_detector_config_validation():
+    DetectorConfig(confidence_threshold=0.5)
+    import pytest
+    with pytest.raises(AssertionError):
+        DetectorConfig(confidence_threshold=0.0)
+    with pytest.raises(AssertionError):
+        DetectorConfig(img_size=-1)
+    with pytest.raises(AssertionError):
+        DetectorConfig(max_det=0)
+
+
+def test_feature_config_validation():
+    FeatureConfig(face_det_thresh=0.5)
+    import pytest
+    with pytest.raises(AssertionError):
+        FeatureConfig(face_det_thresh=0.0)
+    with pytest.raises(AssertionError):
+        FeatureConfig(gait_sequence_length=0)
+    with pytest.raises(AssertionError):
+        FeatureConfig(embedding_cache_ttl=-1)
