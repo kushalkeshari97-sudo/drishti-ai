@@ -151,11 +151,18 @@ Options:
 ### Live Camera Monitoring
 
 ```bash
-# RTSP camera
-sabnetra start rtsp://admin:password@192.168.1.100:554/stream --name entrance
-
-# Webcam demo
+# Local webcam (default)
 python scripts/run_camera.py
+
+# Webcam with custom device index
+python scripts/run_camera.py --camera-id 1
+
+# RTSP camera
+python scripts/run_camera.py --rtsp rtsp://admin:password@192.168.1.100:554/stream
+# or via environment variable: set SABNETRA_RTSP_URL=rtsp://...
+
+# CLI-based RTSP monitoring
+sabnetra start rtsp://admin:password@192.168.1.100:554/stream --name entrance
 ```
 
 ### API Server
