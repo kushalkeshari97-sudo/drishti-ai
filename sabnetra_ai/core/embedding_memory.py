@@ -13,7 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 class TrackMemory:
+    """Stores temporal embeddings and state for a single tracked object."""
+
     def __init__(self, track_id: int, camera_id: str):
+        """Initialize track memory with track and camera identifiers."""
         self.track_id = track_id
         self.camera_id = camera_id
         self.face_embeddings: list = []
@@ -33,6 +36,7 @@ class TrackMemory:
         self.match_score: float = 0.0
 
     def update(self, features: dict, timestamp: float):
+        """Update memory with new embeddings and recompute best representations."""
         self.last_seen = timestamp
         self.timestamps.append(timestamp)
         if features.get("face_embedding") is not None:
@@ -59,6 +63,7 @@ class TrackMemory:
         return mean_emb
 
     def get_consolidated(self) -> dict:
+        """Return a consolidated dict of all stored embeddings and metadata."""
         return {
             "face": self.best_face,
             "body": self.best_body,
@@ -76,19 +81,25 @@ class TrackMemory:
 
     @property
     def age(self) -> float:
+        """Return the age of this track in seconds."""
         return time.time() - self.first_seen
 
     def is_stale(self, timeout: float = 300.0) -> bool:
+        """Check if this track has not been updated within timeout seconds."""
         return (time.time() - self.last_seen) > timeout
 
 
 class EmbeddingMemorySystem:
+    """Manages all TrackMemory objects with creation, lookup, and cleanup."""
+
     def __init__(self, config: Optional[SabNetraConfig] = None):
+        """Initialize memory system with config."""
         self.config = config or SabNetraConfig()
         self._track_memories: OrderedDict[int, TrackMemory] = OrderedDict()
         self._camera_tracks: defaultdict = defaultdict(list)
 
     def get_or_create(self, track_id: int, camera_id: str) -> TrackMemory:
+        """Return existing TrackMemory or create a new one for the track."""
         if track_id not in self._track_memories:
             mem = TrackMemory(track_id, camera_id)
             self._track_memories[track_id] = mem
@@ -97,19 +108,23 @@ class EmbeddingMemorySystem:
 
     def update(self, track_id: int, camera_id: str, features: dict,
                timestamp: float):
+        """Update or create TrackMemory with new features."""
         mem = self.get_or_create(track_id, camera_id)
         mem.update(features, timestamp)
 
     def get(self, track_id: int) -> Optional[TrackMemory]:
+        """Return TrackMemory for the given track ID, or None."""
         return self._track_memories.get(track_id)
 
     def get_consolidated(self, track_id: int) -> Optional[dict]:
+        """Return consolidated dict for a track, or None."""
         mem = self.get(track_id)
         if mem is None:
             return None
         return mem.get_consolidated()
 
     def get_all_active(self, max_age: float = 300.0) -> List[TrackMemory]:
+        """Return all tracks that have been seen within max_age seconds."""
         now = time.time()
         return [
             m for m in self._track_memories.values()
@@ -117,6 +132,7 @@ class EmbeddingMemorySystem:
         ]
 
     def cleanup_stale(self, timeout: float = 300.0):
+        """Remove tracks that have not been updated within timeout seconds."""
         stale = [
             tid for tid, mem in self._track_memories.items()
             if mem.is_stale(timeout)
@@ -133,6 +149,15 @@ class EmbeddingMemorySystem:
                             threshold: float = 0.5,
                             top_k: int = 10
                             ) -> List[Tuple[int, float, str]]:
+        """Search active tracks by embedding similarity.
+        Args:
+            embedding: Query embedding.
+            embedding_type: Type of embedding to compare ('face', 'body', 'clothing').
+            threshold: Minimum similarity threshold.
+            top_k: Maximum results to return.
+        Returns:
+            List of (track_id, similarity, state) tuples.
+        """
         results = []
         for tid, mem in self._track_memories.items():
             target = None
@@ -151,6 +176,7 @@ class EmbeddingMemorySystem:
         return results[:top_k]
 
     def save(self, path: str):
+        """Persist track memories to disk using pickle."""
         data = {
             "track_memories": self._track_memories,
             "camera_tracks": dict(self._camera_tracks),
@@ -161,6 +187,7 @@ class EmbeddingMemorySystem:
         logger.info(f"Saved {len(self._track_memories)} track memories to {path}")
 
     def load(self, path: str):
+        """Load track memories from a pickle file on disk."""
         with open(path, "rb") as f:
             data = pickle.load(f)
         self._track_memories = data.get("track_memories", OrderedDict())
@@ -170,9 +197,11 @@ class EmbeddingMemorySystem:
 
     @property
     def size(self) -> int:
+        """Return the number of tracked objects."""
         return len(self._track_memories)
 
     def stats(self) -> dict:
+        """Return summary statistics about the memory system."""
         states = {"GREEN": 0, "YELLOW": 0, "RED": 0}
         for mem in self._track_memories.values():
             states[mem.state] = states.get(mem.state, 0) + 1
