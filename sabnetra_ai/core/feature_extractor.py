@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import torch
-import torch.nn as nn
 import logging
 from typing import List, Optional, Tuple
 
@@ -14,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class IdentityFeatures:
+    """Container for multi-modal identity embeddings of a single detection."""
+
     __slots__ = ("face_embedding", "body_embedding", "clothing_descriptor",
                  "gait_descriptor", "track_id", "camera_id", "timestamp",
                  "bbox")
@@ -30,11 +31,13 @@ class IdentityFeatures:
         self.bbox: Optional[np.ndarray] = None
 
     def has_any_embedding(self) -> bool:
+        """Check if at least one embedding is present."""
         return any(x is not None for x in [
             self.face_embedding, self.body_embedding,
             self.clothing_descriptor, self.gait_descriptor])
 
     def to_dict(self) -> dict:
+        """Serialize feature presence and metadata to dict."""
         return {
             "has_face": self.face_embedding is not None,
             "face_dim": len(self.face_embedding) if self.face_embedding is not None else 0,
@@ -48,6 +51,7 @@ class IdentityFeatures:
         }
 
     def normalize_all(self):
+        """L2-normalize all stored embeddings in-place."""
         if self.face_embedding is not None:
             self.face_embedding = l2_normalize(self.face_embedding)
         if self.body_embedding is not None:
@@ -59,14 +63,31 @@ class IdentityFeatures:
 
 
 class FeatureExtractor:
+    """Extracts multi-modal features (face, body, clothing, gait) from detections."""
+
     def __init__(self, config: Optional[FeatureConfig] = None,
-                 model_manager: Optional[ModelManager] = None):
+                 model_manager: Optional[ModelManager] = None,
+                 enable_face_recognition: bool = True,
+                 enable_reid: bool = True,
+                 enable_clothing: bool = True,
+                 enable_gait: bool = False):
+        """Initialize extractor with config and per-modality toggles."""
         self.config = config or FeatureConfig()
         self.model_manager = model_manager or ModelManager()
-        self._clothing_conv: Optional[nn.Conv2d] = None
+        self.enable_face_recognition = enable_face_recognition
+        self.enable_reid = enable_reid
+        self.enable_clothing = enable_clothing
+        self.enable_gait = enable_gait
 
     def extract_face(self, frame: np.ndarray,
                      bbox: np.ndarray) -> Optional[np.ndarray]:
+        """Extract face embedding from a bounding box region.
+        Args:
+            frame: Source image.
+            bbox: (x1, y1, x2, y2) bounding box.
+        Returns:
+            L2-normalized face embedding or None.
+        """
         with Timer("face_extract"):
             try:
                 model = self.model_manager.face_model
@@ -91,7 +112,7 @@ class FeatureExtractor:
                 embedding = best_face.normed_embedding
                 return l2_normalize(embedding.astype(np.float32))
             except Exception as e:
-                logger.debug(f"Face extraction failed: {e}")
+                logger.warning(f"Face extraction failed: {e}")
                 return None
 
     def extract_body(self, frame: np.ndarray,
@@ -111,18 +132,30 @@ class FeatureExtractor:
                 if crop.size == 0:
                     return None
                 rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                emb = model.predict(rgb)
+                rgb_resized = cv2.resize(rgb, (128, 256))
+                rgb_tensor = torch.from_numpy(rgb_resized).permute(2, 0, 1).unsqueeze(0).float()
+                if torch.cuda.is_available():
+                    rgb_tensor = rgb_tensor.cuda()
+                with torch.no_grad():
+                    emb = model(rgb_tensor)
                 if isinstance(emb, torch.Tensor):
                     emb = emb.cpu().numpy()
                 if emb.ndim > 1:
                     emb = emb.flatten()
                 return l2_normalize(emb.astype(np.float32))
             except Exception as e:
-                logger.debug(f"ReID extraction failed: {e}")
+                logger.warning(f"ReID extraction failed: {e}")
                 return None
 
     def extract_clothing(self, frame: np.ndarray,
-                         bbox: np.ndarray) -> Optional[np.ndarray]:
+                          bbox: np.ndarray) -> Optional[np.ndarray]:
+        """Extract HSV-based clothing color descriptor from the upper body.
+        Args:
+            frame: Source image.
+            bbox: (x1, y1, x2, y2) bounding box.
+        Returns:
+            L2-normalized clothing descriptor or None.
+        """
         with Timer("clothing_extract"):
             try:
                 x1, y1, x2, y2 = map(int, bbox)
@@ -136,29 +169,28 @@ class FeatureExtractor:
                 crop = frame[body_top:body_bottom, x1:x2]
                 if crop.size == 0:
                     return None
-                rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                resized = cv2.resize(rgb, (128, 256))
-                resized = resized.astype(np.float32) / 255.0
-                mean = np.array([0.485, 0.456, 0.406])
-                std = np.array([0.229, 0.224, 0.225])
-                resized = (resized - mean) / std
-                resized = np.transpose(resized, (2, 0, 1))
-                tensor = torch.from_numpy(resized).unsqueeze(0)
-                if torch.cuda.is_available():
-                    tensor = tensor.cuda()
-                if self._clothing_conv is None:
-                    self._clothing_conv = nn.Conv2d(
-                        3, self.config.clothing_feature_dim,
-                        kernel_size=1).to(tensor.device)
-                with torch.no_grad():
-                    feat = self._clothing_conv(tensor).flatten().cpu().numpy()
-                return l2_normalize(feat.astype(np.float32))
+                hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+                h_bins, s_bins, v_bins = 32, 16, 16
+                h_hist = cv2.calcHist([hsv], [0], None, [h_bins], [0, 180])
+                s_hist = cv2.calcHist([hsv], [1], None, [s_bins], [0, 256])
+                v_hist = cv2.calcHist([hsv], [2], None, [v_bins], [0, 256])
+                for hist in (h_hist, s_hist, v_hist):
+                    cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
+                descriptor = np.concatenate([h_hist.flatten(), s_hist.flatten(), v_hist.flatten()])
+                return l2_normalize(descriptor.astype(np.float32))
             except Exception as e:
-                logger.debug(f"Clothing extraction failed: {e}")
+                logger.warning(f"Clothing extraction failed: {e}")
                 return None
 
     def extract_gait(self, frames: List[np.ndarray],
                      bboxes: List[np.ndarray]) -> Optional[np.ndarray]:
+        """Extract gait embedding from a sequence of frames.
+        Args:
+            frames: Sequence of source images.
+            bboxes: Corresponding bounding boxes.
+        Returns:
+            L2-normalized gait embedding or None.
+        """
         if not self.config.gait_enabled:
             return None
         with Timer("gait_extract"):
@@ -188,7 +220,7 @@ class FeatureExtractor:
                     emb = emb.cpu().numpy().flatten()
                 return l2_normalize(emb.astype(np.float32))
             except Exception as e:
-                logger.debug(f"Gait extraction failed: {e}")
+                logger.warning(f"Gait extraction failed: {e}")
                 return None
 
     def extract_all(self, frame: np.ndarray, bbox: np.ndarray,
@@ -196,16 +228,31 @@ class FeatureExtractor:
                     gait_frames: Optional[List[np.ndarray]] = None,
                     gait_bboxes: Optional[List[np.ndarray]] = None
                     ) -> IdentityFeatures:
+        """Extract all enabled feature modalities for a detection.
+        Args:
+            frame: Source image.
+            bbox: Bounding box of the detection.
+            track_id: Track identifier.
+            camera_id: Camera identifier.
+            timestamp: Frame timestamp.
+            gait_frames: Optional gait sequence frames.
+            gait_bboxes: Optional gait sequence bboxes.
+        Returns:
+            IdentityFeatures with extracted embeddings.
+        """
         features = IdentityFeatures(
             track_id=track_id,
             camera_id=camera_id,
             timestamp=timestamp,
         )
         features.bbox = bbox
-        features.face_embedding = self.extract_face(frame, bbox)
-        features.body_embedding = self.extract_body(frame, bbox)
-        features.clothing_descriptor = self.extract_clothing(frame, bbox)
-        if gait_frames and gait_bboxes:
+        if self.enable_face_recognition:
+            features.face_embedding = self.extract_face(frame, bbox)
+        if self.enable_reid:
+            features.body_embedding = self.extract_body(frame, bbox)
+        if self.enable_clothing:
+            features.clothing_descriptor = self.extract_clothing(frame, bbox)
+        if self.enable_gait and gait_frames and gait_bboxes:
             features.gait_descriptor = self.extract_gait(gait_frames, gait_bboxes)
         features.normalize_all()
         return features
