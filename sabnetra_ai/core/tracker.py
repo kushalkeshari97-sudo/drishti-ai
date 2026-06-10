@@ -205,8 +205,8 @@ class BoTSORT:
                     ft.get("embedding", np.zeros(512))
                 ) if track.get_appearance_embedding() is not None else 0
                 if emb_sim > self.config.fragmented_track_embedding_thresh:
-                    logger.info(f"Merging fragmented track {ft['track_id']} "
-                                f"into {track.track_id}")
+                    logger.debug(f"Merging fragmented track {ft['track_id']} "
+                                 f"into {track.track_id}")
                     self.fragmented_tracks.remove(ft)
                     break
 
