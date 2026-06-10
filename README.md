@@ -217,11 +217,29 @@ scripts/                     # Runnable entry points
 ├── run_camera.py            # Webcam / RTSP live demo
 └── run_api.py               # FastAPI server
 
-tests/                       # 200+ tests
+tests/                       # 200+ tests across 22 files
+├── test_alert_system.py
+├── test_api.py
+├── test_cli.py
+├── test_config.py
+├── test_config_loader.py
+├── test_cross_camera.py
 ├── test_detector.py
-├── test_tracker.py
+├── test_embedding_memory.py
+├── test_feature_extractor.py
+├── test_fir_module.py
+├── test_frame_buffer.py
+├── test_geometry.py
+├── test_helpers.py
 ├── test_matcher.py
-└── ...
+├── test_model_manager.py
+├── test_orchestrator.py
+├── test_persistence.py
+├── test_rtsp_manager.py
+├── test_serializers.py
+├── test_state_engine.py
+├── test_suspect_manager.py
+└── test_tracker.py
 
 data/
 └── suspects/                # Suspect photos (gitignored)
