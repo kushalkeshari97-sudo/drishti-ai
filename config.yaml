@@ -24,5 +24,7 @@ pipeline:
   enable_reid: true
   process_every_n_frames: 2
 
-camera:
-  rtsp_url: "rtsp://admin:Xzone%40321@192.168.1.217:554/Streaming/Channels/101"
+# Camera credentials are configured via .env or at runtime via CLI/API.
+# Example .env:
+#   RTSP_URL_CAM_0=rtsp://user:pass@host:554/stream
+# For CLI: sabnetra add-camera "rtsp://..." --name cam_0
