@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class Detection:
+    """Represents a single detection with bounding box and metadata."""
+
     __slots__ = ("bbox", "confidence", "class_id", "track_id", "crop")
 
     def __init__(self, bbox: np.ndarray, confidence: float, class_id: int):
@@ -41,6 +43,7 @@ class Detection:
     def area(self) -> float: return self.width * self.height
 
     def to_dict(self) -> dict:
+        """Serialize detection to a dictionary."""
         return {
             "bbox": self.bbox.tolist(),
             "confidence": self.confidence,
@@ -50,22 +53,28 @@ class Detection:
 
 
 class Detector:
+    """Wraps a YOLO model to detect and filter objects in frames."""
+
     def __init__(self, config: Optional[DetectorConfig] = None,
                  model_manager: Optional[ModelManager] = None):
+        """Initialize detector with config and model manager."""
         self.config = config or DetectorConfig()
         self.model_manager = model_manager or ModelManager()
         self._model = None
 
     @property
     def model(self):
+        """Lazy-loaded YOLO detection model."""
         if self._model is None:
             self._model = self.model_manager.detector
         return self._model
 
     def preprocess(self, frame: np.ndarray) -> np.ndarray:
+        """Preprocess a frame before inference."""
         return frame
 
     def postprocess(self, results) -> List[Detection]:
+        """Convert model outputs to filtered Detection list."""
         detections = []
         if results is None or len(results) == 0:
             return detections
@@ -86,7 +95,7 @@ class Detector:
                 continue
             if w > h * 1.1:
                 continue
-            if w * h < 4000:
+            if w * h < self.config.min_person_area:
                 continue
             det = Detection(
                 bbox=xyxy[i],
@@ -97,11 +106,17 @@ class Detector:
         if detections:
             boxes_arr = np.array([d.bbox for d in detections])
             scores_arr = np.array([d.confidence for d in detections])
-            keep = nms(boxes_arr, scores_arr, 0.3)
+            keep = nms(boxes_arr, scores_arr, self.config.nms_threshold)
             detections = [detections[i] for i in keep]
         return detections
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
+        """Run detection on a single frame and return filtered detections.
+        Args:
+            frame: Input image as numpy array.
+        Returns:
+            List of Detection objects.
+        """
         with Timer("detector"):
             if self.config.skip_frame_on_low_light and is_low_light(frame, self.config.low_light_threshold):
                 return []
@@ -121,6 +136,12 @@ class Detector:
             return detections
 
     def detect_batch(self, frames: List[np.ndarray]) -> List[List[Detection]]:
+        """Run detection on a batch of frames.
+        Args:
+            frames: List of input frames.
+        Returns:
+            List of Detection lists per frame.
+        """
         if not frames:
             return []
         with Timer("detector_batch"):
@@ -152,6 +173,13 @@ class Detector:
 
     def extract_crops(self, frame: np.ndarray,
                       detections: List[Detection]) -> List[np.ndarray]:
+        """Extract image crops for each detection bounding box.
+        Args:
+            frame: Source image.
+            detections: List of detections to crop.
+        Returns:
+            List of cropped images.
+        """
         crops = []
         for det in detections:
             x1 = max(0, int(det.x1))
