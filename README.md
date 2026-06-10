@@ -129,6 +129,18 @@ python scripts/run_video.py video.mp4 --show --output result.mp4 --img-size 192 
 | `--disable-reid` | off | Skip ReID body recognition |
 | `--disable-clothing` | off | Skip clothing descriptor |
 
+### Video Input Sources
+
+SabNetra AI supports three video input methods:
+
+| Source | Method | Use Case |
+|--------|--------|----------|
+| **Local webcam** | `python scripts/run_camera.py` | Testing and demo with built-in or USB camera |
+| **RTSP stream** | `python scripts/run_camera.py --rtsp <url>` | IP cameras, CCTV NVR, or any RTSP-compatible source |
+| **Video file** | `python scripts/run_video.py path/to/file.mp4 --show` | Offline analysis of recorded footage |
+
+The RTSP source also accepts authentication via environment variable (`SABNETRA_RTSP_URL`) for scenarios where passing credentials in the command line is not desired. For multi-camera production setups, use the API server to register streams programmatically.
+
 ### Live Camera
 
 ```bash
