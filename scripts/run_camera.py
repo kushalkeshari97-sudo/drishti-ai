@@ -60,7 +60,7 @@ else:
     print("ERROR: No face detected in suspect.jpg")
     exit(1)
 
-RTSP_URL = "rtsp://admin:Xzone%40321@192.168.1.217:554/Streaming/Channels/101"
+RTSP_URL = os.environ.get("RTSP_URL_CAM_0", "rtsp://user:pass@host:554/stream")
 print(f"Connecting to RTSP...")
 cap = cv2.VideoCapture(RTSP_URL)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
