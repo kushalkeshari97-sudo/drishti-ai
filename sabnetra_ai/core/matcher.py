@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class MatchResult:
+    """Result of a matching operation against the suspect database."""
+
     __slots__ = ("suspect_id", "score", "confidence", "similarities",
                  "is_match")
 
@@ -26,6 +28,8 @@ class MatchResult:
 
 
 class SuspectProfile:
+    """Profile for a known suspect containing multi-modal embeddings."""
+
     def __init__(self, suspect_id: str, case_id: str = "",
                  face_emb: Optional[np.ndarray] = None,
                  body_emb: Optional[np.ndarray] = None,
@@ -42,89 +46,104 @@ class SuspectProfile:
         self.enrollment_time = time.time()
 
     def has_modality(self, modality: str) -> bool:
+        """Check if this profile has a given modality embedding."""
         return getattr(self, f"{modality}_embedding" if modality != "clothing"
                        else "clothing_descriptor", None) is not None
 
 
 class SuspectDatabase:
+    """FAISS-backed database of suspect profiles for fast similarity search."""
+
     def __init__(self):
         self.suspects: Dict[str, SuspectProfile] = {}
         self._face_index: Optional[faiss.Index] = None
         self._body_index: Optional[faiss.Index] = None
-        self._face_ids: List[str] = []
-        self._body_ids: List[str] = []
-        self._dirty = True
+        self._face_id_map: Dict[int, str] = {}
+        self._body_id_map: Dict[int, str] = {}
+        self._next_face_id: int = 0
+        self._next_body_id: int = 0
 
     def add_suspect(self, profile: SuspectProfile):
+        """Add a suspect profile to the database and indices."""
         self.suspects[profile.suspect_id] = profile
-        self._dirty = True
+        self._add_to_indices(profile)
+
+    def _add_to_indices(self, profile: SuspectProfile):
+        if profile.face_embedding is not None:
+            dim = profile.face_embedding.shape[0]
+            if self._face_index is None:
+                self._face_index = faiss.IndexIDMap(faiss.IndexFlatIP(dim))
+            emb = l2_normalize(profile.face_embedding).reshape(1, -1).astype(np.float32)
+            fid = self._next_face_id
+            self._face_index.add_with_ids(emb, np.array([fid]))
+            self._face_id_map[fid] = profile.suspect_id
+            self._next_face_id += 1
+        if profile.body_embedding is not None:
+            dim = profile.body_embedding.shape[0]
+            if self._body_index is None:
+                self._body_index = faiss.IndexIDMap(faiss.IndexFlatIP(dim))
+            emb = l2_normalize(profile.body_embedding).reshape(1, -1).astype(np.float32)
+            bid = self._next_body_id
+            self._body_index.add_with_ids(emb, np.array([bid]))
+            self._body_id_map[bid] = profile.suspect_id
+            self._next_body_id += 1
 
     def remove_suspect(self, suspect_id: str):
+        """Remove a suspect profile by ID and rebuild indices."""
         if suspect_id in self.suspects:
             del self.suspects[suspect_id]
-            self._dirty = True
+            self.rebuild_indices()
 
     def get(self, suspect_id: str) -> Optional[SuspectProfile]:
+        """Retrieve a suspect profile by ID."""
         return self.suspects.get(suspect_id)
 
     def rebuild_indices(self):
-        face_embs = []
-        body_embs = []
-        self._face_ids = []
-        self._body_ids = []
-        for sid, prof in self.suspects.items():
-            if prof.face_embedding is not None:
-                face_embs.append(prof.face_embedding)
-                self._face_ids.append(sid)
-            if prof.body_embedding is not None:
-                body_embs.append(prof.body_embedding)
-                self._body_ids.append(sid)
-        if face_embs:
-            stacked = np.stack(face_embs)
-            self._face_index = self._build_index(stacked, stacked.shape[1])
-        else:
-            self._face_index = None
-        if body_embs:
-            stacked = np.stack(body_embs)
-            self._body_index = self._build_index(stacked, stacked.shape[1])
-        else:
-            self._body_index = None
-        self._dirty = False
-
-    def _build_index(self, embeddings: np.ndarray, dim: int) -> faiss.Index:
-        index = faiss.IndexFlatIP(dim)
-        index.add(embeddings)
-        return index
+        """Rebuild FAISS indices from all stored profiles."""
+        self._face_index = None
+        self._body_index = None
+        self._face_id_map.clear()
+        self._body_id_map.clear()
+        self._next_face_id = 0
+        self._next_body_id = 0
+        for prof in self.suspects.values():
+            self._add_to_indices(prof)
 
     def search_face(self, query: np.ndarray, k: int = 5
                     ) -> List[Tuple[str, float]]:
+        """Search face index for top-k matches. Returns list of (suspect_id, score)."""
         if self._face_index is None or self._face_index.ntotal == 0:
             return []
         if np.linalg.norm(query) == 0:
             return []
         query = l2_normalize(query).reshape(1, -1).astype(np.float32)
         scores, indices = self._face_index.search(query, min(k, self._face_index.ntotal))
-        return [(self._face_ids[idx], float(scores[0][i]))
-                for i, idx in enumerate(indices[0])]
+        return [(self._face_id_map[idx], float(scores[0][i]))
+                for i, idx in enumerate(indices[0]) if idx in self._face_id_map]
 
     def search_body(self, query: np.ndarray, k: int = 5
                     ) -> List[Tuple[str, float]]:
+        """Search body index for top-k matches. Returns list of (suspect_id, score)."""
         if self._body_index is None or self._body_index.ntotal == 0:
             return []
         if np.linalg.norm(query) == 0:
             return []
         query = l2_normalize(query).reshape(1, -1).astype(np.float32)
         scores, indices = self._body_index.search(query, min(k, self._body_index.ntotal))
-        return [(self._body_ids[idx], float(scores[0][i]))
-                for i, idx in enumerate(indices[0])]
+        return [(self._body_id_map[idx], float(scores[0][i]))
+                for i, idx in enumerate(indices[0]) if idx in self._body_id_map]
 
     @property
     def size(self) -> int:
+        """Return the number of suspects in the database."""
         return len(self.suspects)
 
 
 class MatchingEngine:
+    """Orchestrates multi-modal matching with temporal consistency checks."""
+
     def __init__(self, config: Optional[MatcherConfig] = None):
+        """Initialize engine with matcher config and suspect database."""
         self.config = config or MatcherConfig()
         self.suspect_db = SuspectDatabase()
         self._temporal_buffer: Dict[str, deque] = {}
@@ -132,7 +151,6 @@ class MatchingEngine:
     def match(self, features: dict, camera_id: str = "",
               track_id: int = -1) -> MatchResult:
         with Timer("matching_engine"):
-            self._ensure_indices()
             candidates = []
             weights = []
             if features.get("face_embedding") is not None:
@@ -173,6 +191,13 @@ class MatchingEngine:
 
     def match_with_profile(self, features: dict,
                            profile: SuspectProfile) -> float:
+        """Compute weighted similarity score against a single suspect profile.
+        Args:
+            features: Dictionary of query embeddings.
+            profile: The suspect profile to compare against.
+        Returns:
+            Weighted similarity score between 0 and 1.
+        """
         scores = []
         weights = []
         if features.get("face_embedding") is not None and \
@@ -203,12 +228,8 @@ class MatchingEngine:
             return 0.0
         return np.average(scores, weights=weights)
 
-    def _ensure_indices(self):
-        if self.suspect_db._dirty and self.suspect_db.size > 0:
-            self.suspect_db.rebuild_indices()
-
     def _check_temporal_consistency(self, suspect_id: str, score: float,
-                                     track_id: int, camera_id: str) -> bool:
+                                      track_id: int, camera_id: str) -> bool:
         key = f"{suspect_id}_{track_id}"
         if key not in self._temporal_buffer:
             self._temporal_buffer[key] = deque(maxlen=self.config.temporal_consistency_frames)
@@ -222,6 +243,13 @@ class MatchingEngine:
 
     def cross_camera_match(self, source_features: dict,
                             target_features: dict) -> float:
+        """Compute cross-camera similarity between two feature sets.
+        Args:
+            source_features: Features from source camera.
+            target_features: Features from target camera.
+        Returns:
+            Weighted similarity score.
+        """
         sims = []
         if source_features.get("face_embedding") is not None and \
            target_features.get("face_embedding") is not None:
@@ -246,7 +274,9 @@ class MatchingEngine:
         return sum(s * w for s, w in sims) / total_weight
 
     def add_suspect(self, profile: SuspectProfile):
+        """Add a suspect profile to the database."""
         self.suspect_db.add_suspect(profile)
 
     def get_suspect(self, suspect_id: str) -> Optional[SuspectProfile]:
+        """Retrieve a suspect profile by ID."""
         return self.suspect_db.get(suspect_id)
