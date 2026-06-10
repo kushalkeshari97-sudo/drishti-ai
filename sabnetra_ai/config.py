@@ -5,6 +5,8 @@ from typing import Optional
 
 @dataclass
 class TrackerConfig:
+    """Configuration for the BoTSORT tracker."""
+
     track_high_thresh: float = 0.55
     track_low_thresh: float = 0.12
     new_track_thresh: float = 0.65
@@ -25,6 +27,8 @@ class TrackerConfig:
 
 @dataclass
 class DetectorConfig:
+    """Configuration for the YOLO-based object detector."""
+
     model_path: str = "yolov8n.pt"
     confidence_threshold: float = 0.35
     iou_threshold: float = 0.45
@@ -36,10 +40,23 @@ class DetectorConfig:
     batch_size: int = 1
     skip_frame_on_low_light: bool = True
     low_light_threshold: float = 30.0
+    min_person_area: int = 4000
+    nms_threshold: float = 0.3
+    min_face_size: int = 20
+    min_body_size: int = 30
+
+    def __post_init__(self):
+        assert 0 < self.confidence_threshold <= 1
+        assert 0 < self.iou_threshold <= 1
+        assert self.img_size > 0
+        assert self.max_det > 0
+        assert self.min_person_area > 0
 
 
 @dataclass
 class FeatureConfig:
+    """Configuration for feature extraction models and parameters."""
+
     face_model: str = "buffalo_l"
     face_det_thresh: float = 0.5
     reid_model_name: str = "osnet_x1_0"
@@ -51,9 +68,17 @@ class FeatureConfig:
     face_embedding_dim: int = 512
     reid_embedding_dim: int = 512
 
+    def __post_init__(self):
+        assert 0 < self.face_det_thresh <= 1
+        assert self.gait_sequence_length > 0
+        assert self.clothing_feature_dim > 0
+        assert self.embedding_cache_ttl > 0
+
 
 @dataclass
 class MatcherConfig:
+    """Configuration for the matching engine weights and thresholds."""
+
     face_weight: float = 0.40
     reid_weight: float = 0.30
     clothing_weight: float = 0.15
@@ -72,6 +97,8 @@ class MatcherConfig:
 
 @dataclass
 class TemporalConfig:
+    """Configuration for temporal constraints in cross-camera tracking."""
+
     min_travel_time: float = 5.0
     max_travel_speed: float = 15.0
     location_gate_threshold: float = 0.35
@@ -81,6 +108,8 @@ class TemporalConfig:
 
 @dataclass
 class AlertConfig:
+    """Configuration for alert triggering behavior."""
+
     cooldown_seconds: float = 30.0
     max_alerts_per_minute: int = 10
     alert_on_yellow: bool = False
@@ -89,6 +118,8 @@ class AlertConfig:
 
 @dataclass
 class PipelineConfig:
+    """Configuration for the main processing pipeline."""
+
     max_cameras: int = 16
     frame_buffer_size: int = 4
     process_every_n_frames: int = 2
@@ -104,6 +135,8 @@ class PipelineConfig:
 
 @dataclass
 class SabNetraConfig:
+    """Top-level configuration aggregating all sub-configs and global settings."""
+
     tracker: TrackerConfig = field(default_factory=TrackerConfig)
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
