@@ -41,10 +41,13 @@ class TemporalIntelligence:
 
 
 class CrossCameraTracker:
+    """Tracks suspects across multiple cameras using temporal and appearance matching."""
+
     def __init__(self, matcher: MatchingEngine,
                  embedding_memory: EmbeddingMemorySystem,
                  temporal_config: Optional[TemporalConfig] = None,
                  matcher_config: Optional[MatcherConfig] = None):
+        """Initialize cross-camera tracker with matcher, memory, and temporal intelligence."""
         self.matcher = matcher
         self.embedding_memory = embedding_memory
         self.temporal = TemporalIntelligence(temporal_config or TemporalConfig())
@@ -54,21 +57,34 @@ class CrossCameraTracker:
 
     def register_camera(self, camera_id: str,
                         position: Optional[Tuple[float, float]] = None):
+        """Register a camera node with optional position."""
         self._cameras[camera_id] = CameraNode(camera_id, position)
 
     def set_camera_overlap(self, cam_a: str, cam_b: str):
+        """Mark two cameras as having overlapping fields of view."""
         if cam_a in self._cameras and cam_b in self._cameras:
             self._cameras[cam_a].overlapping_cameras.append(cam_b)
             self._cameras[cam_b].overlapping_cameras.append(cam_a)
 
     def set_camera_adjacent(self, cam_a: str, cam_b: str):
+        """Mark two cameras as adjacent (non-overlapping but connected)."""
         if cam_a in self._cameras and cam_b in self._cameras:
             self._cameras[cam_a].adjacent_cameras.append(cam_b)
             self._cameras[cam_b].adjacent_cameras.append(cam_a)
 
     def track_across_cameras(self, suspect_id: str, from_camera: str,
-                             to_camera: str, features: dict,
-                             timestamp: float) -> Tuple[bool, float]:
+                              to_camera: str, features: dict,
+                              timestamp: float) -> Tuple[bool, float]:
+        """Check if a suspect appears in another camera using temporal and appearance matching.
+        Args:
+            suspect_id: The suspect identifier.
+            from_camera: Source camera ID.
+            to_camera: Target camera ID.
+            features: Feature embeddings from the target camera.
+            timestamp: Current timestamp.
+        Returns:
+            Tuple of (is_match, score).
+        """
         with Timer("cross_camera"):
             if not self.temporal.validate_transition(
                     suspect_id, from_camera, to_camera, timestamp):
@@ -82,14 +98,23 @@ class CrossCameraTracker:
             is_match = score >= self.matcher_config.yellow_threshold
             if is_match:
                 self._suspect_camera_map[suspect_id].add(to_camera)
-                logger.info(f"Cross-camera match: {suspect_id} "
-                            f"{from_camera} -> {to_camera} score={score:.3f}")
+                logger.debug(f"Cross-camera match: {suspect_id} "
+                             f"{from_camera} -> {to_camera} score={score:.3f}")
             return is_match, score
 
     def find_potential_reappearances(self, suspect_id: str,
                                       camera_id: str,
                                       features: dict,
                                       timestamp: float) -> List[dict]:
+        """Find potential reappearances of a suspect across all registered cameras.
+        Args:
+            suspect_id: The suspect identifier.
+            camera_id: Current camera ID.
+            features: Feature embeddings.
+            timestamp: Current timestamp.
+        Returns:
+            List of dicts with camera_id, suspect_id, score, timestamp.
+        """
         results = []
         for cid, cam_node in self._cameras.items():
             if cid == camera_id:
@@ -106,10 +131,18 @@ class CrossCameraTracker:
         return results
 
     def get_suspect_camera_path(self, suspect_id: str) -> List[str]:
+        """Return the list of cameras a suspect has been observed in."""
         return list(self._suspect_camera_map.get(suspect_id, set()))
 
     def get_overlapping_tracks(self, camera_id: str,
                                 tracks: List[TrackMemory]) -> List[TrackMemory]:
+        """Filter tracks to those from overlapping cameras.
+        Args:
+            camera_id: The reference camera.
+            tracks: List of tracks to filter.
+        Returns:
+            Tracks from overlapping cameras.
+        """
         cam_node = self._cameras.get(camera_id)
         if not cam_node or not cam_node.overlapping_cameras:
             return []
@@ -120,6 +153,7 @@ class CrossCameraTracker:
         return overlapping
 
     def stats(self) -> dict:
+        """Return summary statistics about cross-camera tracking."""
         return {
             "registered_cameras": len(self._cameras),
             "cross_camera_suspects": len(self._suspect_camera_map),
