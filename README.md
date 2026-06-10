@@ -217,13 +217,22 @@ scripts/                     # Runnable entry points
 ├── run_camera.py            # Webcam / RTSP live demo
 └── run_api.py               # FastAPI server
 
-tests/                       # 200+ tests across 22 files
-
+tests/                       # Test suite (run with pytest)
 data/
 └── suspects/                # Suspect photos (gitignored)
 
 config.yaml                  # Runtime configuration
 ```
+
+---
+
+## Testing
+
+```bash
+python -m pytest tests/
+```
+
+Run the full test suite (200+ tests across 22 files). All tests are isolated — no external services or models required.
 
 ---
 
