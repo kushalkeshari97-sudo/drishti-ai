@@ -1,2 +1,2 @@
 @echo off
-D:\.Net\Conda\envs\sabnetra\Scripts\sabnetra.exe %*
+python -m sabnetra_ai.cli %*
